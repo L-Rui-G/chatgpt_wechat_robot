@@ -1,16 +1,18 @@
 package service
 
 import (
-	"github.com/qingconglaixueit/wechatbot/config"
+	"time"
+
 	"github.com/eatmoreapple/openwechat"
 	"github.com/patrickmn/go-cache"
-	"time"
+	"github.com/qingconglaixueit/wechatbot/config"
+	"github.com/sashabaranov/go-openai"
 )
 
 // UserServiceInterface 用户业务接口
 type UserServiceInterface interface {
-	GetUserSessionContext() string
-	SetUserSessionContext(question, reply string)
+	GetUserSessionContext() []openai.ChatCompletionMessage
+	SetUserSessionContext(SessionContext []openai.ChatCompletionMessage, reply string)
 	ClearUserSessionContext()
 }
 
@@ -38,16 +40,16 @@ func (s *UserService) ClearUserSessionContext() {
 }
 
 // GetUserSessionContext 获取用户会话上下文文本
-func (s *UserService) GetUserSessionContext() string {
+func (s *UserService) GetUserSessionContext() []openai.ChatCompletionMessage {
 	// 1.获取上次会话信息，如果没有直接返回空字符串
 	sessionContext, ok := s.cache.Get(s.user.ID())
 	if !ok {
-		return ""
+		return nil
 	}
 
-	// 2.如果字符长度超过等于4000，强制清空会话（超过GPT会报错）。
-	contextText := sessionContext.(string)
-	if len(contextText) >= 4000 {
+	// 2.如果对话超过等于50次，强制清空会话（超过GPT会报错）。
+	contextText := sessionContext.([]openai.ChatCompletionMessage)
+	if len(contextText) >= 100 {
 		s.cache.Delete(s.user.ID())
 	}
 
@@ -56,7 +58,10 @@ func (s *UserService) GetUserSessionContext() string {
 }
 
 // SetUserSessionContext 设置用户会话上下文文本，question用户提问内容，GTP回复内容
-func (s *UserService) SetUserSessionContext(question, reply string) {
-	value := question + "\n" + reply
+func (s *UserService) SetUserSessionContext(SessionContext []openai.ChatCompletionMessage, reply string) {
+	value := append(SessionContext, openai.ChatCompletionMessage{
+		Role:    openai.ChatMessageRoleAssistant,
+		Content: reply,
+	})
 	s.cache.Set(s.user.ID(), value, time.Second*config.LoadConfig().SessionTimeout)
 }

@@ -2,10 +2,11 @@ package bootstrap
 
 import (
 	"fmt"
+	"log"
+
 	"github.com/eatmoreapple/openwechat"
 	"github.com/qingconglaixueit/wechatbot/handlers"
 	"github.com/qingconglaixueit/wechatbot/pkg/logger"
-	"os"
 )
 
 func Run() {
@@ -21,22 +22,17 @@ func Run() {
 	bot.MessageHandler = handler
 
 	// 注册登陆二维码回调
-	bot.UUIDCallback = openwechat.PrintlnQrcodeUrl
-
+	//bot.UUIDCallback = openwechat.PrintlnQrcodeUrl   //浏览器登录
+	bot.UUIDCallback = handlers.QrCodeCallBack //控制台扫码登录
 	// 创建热存储容器对象
 	reloadStorage := openwechat.NewJsonFileHotReloadStorage("storage.json")
 
 	// 执行热登录
 	err = bot.HotLogin(reloadStorage)
+
 	if err != nil {
-		if err := os.Remove("storage.json"); err != nil {
-			logger.Warning(fmt.Sprintf("os.Remove storage.json error: %v", err))
-			return
-		}
-		reloadStorage := openwechat.NewJsonFileHotReloadStorage("storage.json")
-		err = bot.HotLogin(reloadStorage)
-		if err != nil {
-			logger.Warning(fmt.Sprintf("bot.HotLogin error: %v", err))
+		if err = bot.Login(); err != nil {
+			log.Printf("login error: %v \n", err)
 			return
 		}
 	}

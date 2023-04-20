@@ -4,14 +4,17 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/eatmoreapple/openwechat"
 	"github.com/qingconglaixueit/wechatbot/config"
+	"github.com/qingconglaixueit/wechatbot/dreamstudio"
 	"github.com/qingconglaixueit/wechatbot/gpt"
 	"github.com/qingconglaixueit/wechatbot/pkg/logger"
 	"github.com/qingconglaixueit/wechatbot/service"
+	"github.com/sashabaranov/go-openai"
 )
 
 var _ MessageHandlerInterface = (*UserMessageHandler)(nil)
@@ -36,6 +39,7 @@ func UserMessageContextHandler() func(ctx *openwechat.MessageContext) {
 
 		// 处理用户消息
 		err = handler.handle()
+
 		if err != nil {
 			logger.Warning(fmt.Sprintf("handle user message error: %s", err))
 		}
@@ -60,10 +64,59 @@ func NewUserMessageHandler(message *openwechat.Message) (MessageHandlerInterface
 
 // handle 处理消息
 func (h *UserMessageHandler) handle() error {
+	cfg := config.LoadConfig()
+	//判断文本前缀是PictureToken，例如："生成图片"
+	if strings.HasPrefix(h.msg.Content, cfg.PictureToken) {
+		return h.ReplyImage()
+	}
+	//如果是纯文本，使用ChatGPT进行回复
 	if h.msg.IsText() {
 		return h.ReplyText()
 	}
 	return nil
+}
+
+// ReplyImage 发送生成的图片
+func (h *UserMessageHandler) ReplyImage() error {
+	if time.Now().Unix()-h.msg.CreateTime > 60 {
+		return nil
+	}
+
+	maxInt := rand.New(rand.NewSource(time.Now().UnixNano())).Intn(5)
+	time.Sleep(time.Duration(maxInt+1) * time.Second)
+
+	log.Printf("Received User[%v], Content[%v], CreateTime[%v]", h.sender.NickName, h.msg.Content,
+		time.Unix(h.msg.CreateTime, 0).Format("2006/01/02 15:04:05"))
+
+	var (
+		replyPath string
+		err       error
+	)
+	cfg := config.LoadConfig()
+	// 1.生成图片
+	text := strings.Replace(h.msg.Content, cfg.PictureToken, "", -1)
+	replyPath, err = dreamstudio.TextToImage(text)
+
+	if err != nil {
+		text := err.Error()
+		if strings.Contains(err.Error(), "context deadline exceeded") {
+			text = deadlineExceededText
+		}
+		_, err = h.msg.ReplyText(text)
+		if err != nil {
+			return fmt.Errorf("reply user error: %v ", err)
+		}
+		return err
+	}
+
+	//2.回复图片
+	img, _ := os.Open(replyPath)
+	defer img.Close()
+	_, err = h.msg.ReplyImage(img)
+	if err != nil {
+		return fmt.Errorf("reply user error: %v ", err)
+	}
+	return err
 }
 
 // ReplyText 发送文本消息到群
@@ -84,13 +137,13 @@ func (h *UserMessageHandler) ReplyText() error {
 	)
 	// 1.获取上下文，如果字符串为空不处理
 	requestText := h.getRequestText()
-	if requestText == "" {
+	if len(requestText) == 0 {
 		log.Println("user message is empty")
 		return nil
 	}
 
 	// 2.向GPT发起请求，如果回复文本等于空,不回复
-	reply, err = gpt.Completions(h.getRequestText())
+	reply, err = gpt.Chat(h.getRequestText())
 	if err != nil {
 		text := err.Error()
 		if strings.Contains(err.Error(), "context deadline exceeded") {
@@ -115,30 +168,37 @@ func (h *UserMessageHandler) ReplyText() error {
 }
 
 // getRequestText 获取请求接口的文本，要做一些清晰
-func (h *UserMessageHandler) getRequestText() string {
+func (h *UserMessageHandler) getRequestText() []openai.ChatCompletionMessage {
 	// 1.去除空格以及换行
 	requestText := strings.TrimSpace(h.msg.Content)
 	requestText = strings.Trim(h.msg.Content, "\n")
+	if len(requestText) == 0 {
+		log.Println("user message is empty")
+		sessionText := make([]openai.ChatCompletionMessage, 0)
+		return sessionText
+	}
 
-	// 2.获取上下文，拼接在一起，如果字符长度超出4000，截取为4000。（GPT按字符长度算），达芬奇3最大为4068，也许后续为了适应要动态进行判断。
+	// 2.获取上下文，拼接在一起，
 	sessionText := h.service.GetUserSessionContext()
-	if sessionText != "" {
-		requestText = sessionText + "\n" + requestText
+	if sessionText != nil {
+		sessionText = append(sessionText, openai.ChatCompletionMessage{
+			Role:    openai.ChatMessageRoleUser,
+			Content: requestText,
+		})
+	} else {
+		sessionText = make([]openai.ChatCompletionMessage, 0)
+		sessionText = append(sessionText, openai.ChatCompletionMessage{
+			Role:    openai.ChatMessageRoleUser,
+			Content: requestText,
+		})
 	}
-	if len(requestText) >= 4000 {
-		requestText = requestText[:4000]
-	}
+	// 判断结构体数组总长度目前还不太会写
+	// if len(requestText) >= 4000 {
+	// 	requestText = requestText[:4000]
+	// }
 
-	// 3.检查用户发送文本是否包含结束标点符号
-	punctuation := ",.;!?，。！？、…"
-	runeRequestText := []rune(requestText)
-	lastChar := string(runeRequestText[len(runeRequestText)-1:])
-	if strings.Index(punctuation, lastChar) < 0 {
-		requestText = requestText + "？" // 判断最后字符是否加了标点，没有的话加上句号，避免openai自动补齐引起混乱。
-	}
-
-	// 4.返回请求文本
-	return requestText
+	// 3.返回请求文本
+	return sessionText
 }
 
 // buildUserReply 构建用户回复
