@@ -40,10 +40,10 @@ func LoadConfig() *Configuration {
 		// 给配置赋默认值
 		config = &Configuration{
 			AutoPass:          false,
-			SessionTimeout:    60,
-			MaxTokens:         512,
-			Model:             "text-davinci-003",
-			Temperature:       0.9,
+			SessionTimeout:    30,
+			MaxTokens:         1024,
+			Model:             "gpt-3.5-turbo",
+			Temperature:       0.6,
 			SessionClearToken: "下个问题",
 		}
 
