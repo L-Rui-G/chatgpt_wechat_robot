@@ -39,7 +39,8 @@ type ChoiceItem struct {
 // ChatGPTRequestBody 响应体
 type ChatGPTRequestBody struct {
 	Model            string  `json:"model"`
-	Prompt           string  `json:"prompt"`
+	//Prompt           string  `json:"prompt"`
+	Message          string  `json:"message"` 
 	MaxTokens        uint    `json:"max_tokens"`
 	Temperature      float64 `json:"temperature"`
 	TopP             int     `json:"top_p"`
@@ -100,7 +101,7 @@ func httpRequestCompletions(msg string, runtimes int) (*ChatGPTResponseBody, err
 
 	log.Printf("gpt request(%d) json: %s\n", runtimes, string(requestData))
 
-	req, err := http.NewRequest(http.MethodPost, "https://api.openai.com/v1/completions", bytes.NewBuffer(requestData))
+	req, err := http.NewRequest(http.MethodPost, "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(requestData))
 	if err != nil {
 		return nil, fmt.Errorf("http.NewRequest error: %v", err)
 	}
