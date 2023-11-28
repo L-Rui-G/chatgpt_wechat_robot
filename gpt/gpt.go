@@ -39,7 +39,8 @@ type ChoiceItem struct {
 // ChatGPTRequestBody 响应体
 type ChatGPTRequestBody struct {
 	Model            string  `json:"model"`
-	Prompt           string  `json:"prompt"`
+	//Prompt           string  `json:"prompt"`
+	Message          string  `json:"message"` 
 	MaxTokens        uint    `json:"max_tokens"`
 	Temperature      float64 `json:"temperature"`
 	TopP             int     `json:"top_p"`
